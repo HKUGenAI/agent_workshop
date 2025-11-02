@@ -19,6 +19,12 @@ from pydantic import BaseModel, Field
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+import sys
+repo_root_str = str(REPO_ROOT)
+if repo_root_str not in sys.path:
+    sys.path.insert(0, repo_root_str)
+from utils.ollama_adaptor import model
+
 
 class LessonPlan(BaseModel):
     stage: Literal["stage1", "stage2", "stage3"]
@@ -73,35 +79,35 @@ CURRICULUM_SERVER_PARAMS = MCPServerStdioParams(
 
 
 async def main() -> None:
-    curriculum_server = MCPServerStdio(
+    async with MCPServerStdio(
         params=CURRICULUM_SERVER_PARAMS,
         cache_tools_list=True,
         name="Curriculum Server",
-    )
+    ) as curriculum_server:
 
-    curriculum_coach = Agent(
-        name="Curriculum Coach",
-        # TODO: Rewrite the instructions so the agent knows it must call both the custom tool
-        # and the MCP server before responding. Highlight the JSON output requirement.
-        instructions=(
-            "Update me! Describe how to use coach.draft_outline and curriculum.fetch_stage_summary "
-            "to assemble a JSON lesson plan."
-        ),
-        tools=[draft_outline],
-        mcp_servers=[curriculum_server],
-        model="qwen:30b",
-        model_settings=ModelSettings(temperature=0.25),
-        output_type=LessonPlan,
-    )
+        curriculum_coach = Agent(
+            name="Curriculum Coach",
+            # TODO: Rewrite the instructions so the agent knows it must call both the custom tool
+            # and the MCP server before responding. Highlight the JSON output requirement.
+            instructions=(
+                "Update me! Describe how to use coach.draft_outline and curriculum.fetch_stage_summary "
+                "to assemble a JSON lesson plan."
+            ),
+            tools=[draft_outline],
+            mcp_servers=[curriculum_server],
+            model=model,
+            model_settings=ModelSettings(temperature=0.25),
+            output_type=LessonPlan,
+        )
 
-    # TODO: Provide a richer user prompt (e.g. include a target audience and learning depth).
-    query = "Generate a lesson plan for stage2 using the theme 'collaboration'."
+        # TODO: Provide a richer user prompt (e.g. include a target audience and learning depth).
+        query = "Generate a lesson plan for stage2 using the theme 'collaboration'."
 
-    result = await Runner.run(curriculum_coach, query)
-    lesson_plan = result.final_output_as(LessonPlan)
+        result = await Runner.run(curriculum_coach, query)
+        lesson_plan = result.final_output_as(LessonPlan)
 
-    print("\n=== Lesson Plan (JSON) ===")
-    print(lesson_plan.model_dump_json(indent=2))
+        print("\n=== Lesson Plan (JSON) ===")
+        print(lesson_plan.model_dump_json(indent=2))
 
 
 if __name__ == "__main__":

@@ -18,6 +18,13 @@ from agents import (
 )
 from agents.mcp import MCPServerStdio, MCPServerStdioParams
 
+import sys
+repo_root = Path(__file__).resolve().parents[2]
+repo_root_str = str(repo_root)
+if repo_root_str not in sys.path:
+    sys.path.insert(0, repo_root_str)
+from utils.ollama_adaptor import model
+
 
 WORKSPACE_ROOT = Path("/workspace").resolve()
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -64,44 +71,42 @@ def find_repo_todos(relative_path: str, limit: int = 5) -> ToolOutputText:
 
 
 CURRICULUM_SERVER_PARAMS = MCPServerStdioParams(
-    command=sys.executable,
+    command="python",
     args=[str(REPO_ROOT / "stages/stage2/mcp_servers/curriculum_server.py")],
-    cwd=str(REPO_ROOT),
-    env={"PYTHONPATH": str(REPO_ROOT)},
+    cwd=str(REPO_ROOT)
 )
 
 
 async def run_demo() -> None:
-    curriculum_server = MCPServerStdio(
+    async with MCPServerStdio(
         params=CURRICULUM_SERVER_PARAMS,
         cache_tools_list=True,
         name="Curriculum Server",
-    )
+    ) as curriculum_server:
+        mentor = Agent(
+            name="Curriculum Mentor",
+            instructions=(
+                "You support workshop learners. Combine the repo TODO summary with curriculum facts "
+                "from the MCP server. Always cite which tool you used for each fact."
+            ),
+            tools=[find_repo_todos],
+            mcp_servers=[curriculum_server],
+            model=model,
+            model_settings=ModelSettings(temperature=0.1),
+        )
 
-    mentor = Agent(
-        name="Curriculum Mentor",
-        instructions=(
-            "You support workshop learners. Combine the repo TODO summary with curriculum facts "
-            "from the MCP server. Always cite which tool you used for each fact."
-        ),
-        tools=[find_repo_todos],
-        mcp_servers=[curriculum_server],
-        model="qwen:30b",
-        model_settings=ModelSettings(temperature=0.1),
-    )
+        prompt = (
+            "Prepare a short update for the instructor:\n"
+            "1. Summarise outstanding TODO markers in stages/stage1/activity/starter_agent.py\n"
+            "2. Explain how Stage 2 builds on Stage 1 using the curriculum MCP data\n"
+            "3. Suggest the next improvement task for the learner"
+        )
 
-    prompt = (
-        "Prepare a short update for the instructor:\n"
-        "1. Summarise outstanding TODO markers in stages/stage1/activity/starter_agent.py\n"
-        "2. Explain how Stage 2 builds on Stage 1 using the curriculum MCP data\n"
-        "3. Suggest the next improvement task for the learner"
-    )
+        print("> Running Curriculum Mentor...\n")
+        result = await Runner.run(mentor, prompt)
 
-    print("> Running Curriculum Mentor...\n")
-    result = await Runner.run(mentor, prompt)
-
-    print("\n=== Final Answer ===")
-    print(result.final_output)
+        print("\n=== Final Answer ===")
+        print(result.final_output)
 
 
 if __name__ == "__main__":
