@@ -18,7 +18,6 @@ from agents import (
 )
 from agents.mcp import MCPServerStdio, MCPServerStdioParams
 
-import sys
 repo_root = Path(__file__).resolve().parents[2]
 repo_root_str = str(repo_root)
 if repo_root_str not in sys.path:

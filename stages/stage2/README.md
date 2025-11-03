@@ -17,9 +17,6 @@ Carry over the Docker environment from Stage 1:
 docker compose up -d
 docker compose exec ollama ollama pull qwen:30b   # ensure the model exists (first time only)
 docker compose exec workshop bash
-
-# Inside the container (first time only)
-pip install -r requirements.txt   # optional; ensures dependencies match requirements.txt
 ```
 
 ### Helpful environment flags

@@ -6,17 +6,13 @@ Run with: python stages/stage3/demo.py
 from __future__ import annotations
 
 import asyncio
-import shutil
-import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Sequence
+from typing import Literal
 
 from agents import (
     Agent,
-    LocalShellCommandRequest,
-    LocalShellTool,
     ModelSettings,
     Runner,
     RunContextWrapper,
@@ -29,6 +25,11 @@ from agents.mcp import MCPServerStdio, MCPServerStdioParams
 WORKSPACE_ROOT = Path("/workspace").resolve()
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+repo_root_str = str(REPO_ROOT)
+if repo_root_str not in sys.path:
+    sys.path.insert(0, repo_root_str)
+from utils.ollama_adaptor import model
+
 
 @dataclass
 class WorkflowState:
@@ -38,58 +39,6 @@ class WorkflowState:
     action_items: list[str] = field(default_factory=list)
     risks: list[str] = field(default_factory=list)
 
-
-def _format_command(command: Sequence[str]) -> str:
-    return " ".join(command)
-
-
-def _is_safe_path(command: Sequence[str]) -> bool:
-    for token in command[1:]:
-        if token.startswith("/"):
-            return False
-        if token.startswith(".."):
-            return False
-    return True
-
-
-def safe_shell_executor(request: LocalShellCommandRequest) -> str:
-    """Restricted shell executor that also logs output into the shared context."""
-    command = request.data.action.command
-    program = command[0]
-
-    allowed = {"pwd", "ls", "cat", "head"}
-    if program not in allowed:
-        return f"Command '{program}' not allowed. Allowed: {', '.join(sorted(allowed))}"
-    if shutil.which(program) is None:
-        return f"Unable to locate '{program}' in PATH."
-    if not _is_safe_path(command):
-        return "Command blocked: keep paths inside the workspace."
-
-    try:
-        completed = subprocess.run(
-            command,
-            cwd=WORKSPACE_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-        )
-    except Exception as exc:  # noqa: BLE001
-        return f"Executor error: {_format_command(command)} -> {exc}"
-
-    output = completed.stdout.strip() or "(no stdout)"
-    if completed.returncode != 0:
-        output = (
-            f"Command '{_format_command(command)}' exited with {completed.returncode}\n"
-            f"stderr:\n{completed.stderr.strip() or '(empty)'}"
-        )
-
-    # Record the command + output into the shared context if available.
-    state = getattr(request.ctx_wrapper, "context", None)
-    if isinstance(state, WorkflowState):
-        state.research_notes.append(f"$ {_format_command(command)} -> {output}")
-
-    return output
 
 
 def _resolve_relative_path(relative_path: str) -> Path:
@@ -172,89 +121,88 @@ CURRICULUM_SERVER_PARAMS = MCPServerStdioParams(
 
 
 async def main() -> None:
-    shell_tool = LocalShellTool(executor=safe_shell_executor)
-    curriculum_server = MCPServerStdio(
+    async with MCPServerStdio(
         params=CURRICULUM_SERVER_PARAMS,
         cache_tools_list=True,
         name="Curriculum Server",
-    )
-
-    research_agent = Agent(
-        name="Research Agent",
-        handoff_description="Gathers repository signals and curriculum facts.",
-        instructions=(
-            "Investigate the repository to find open TODOs and relevant workshop context. "
-            "Use the shell tool for quick file inspection and curriculum.fetch_stage_summary via MCP "
-            "to enrich your notes. After the tools run, summarise findings for the planner."
-        ),
-        tools=[shell_tool, capture_todos],
-        mcp_servers=[curriculum_server],
-        model="qwen:30b",
-        model_settings=ModelSettings(temperature=0.2),
-    )
-
-    planner_agent = Agent(
-        name="Planner Agent",
-        handoff_description="Transforms research into a concrete workflow plan.",
-        instructions=(
-            "Read the research summary and design a three-step workflow to improve the repo's Stage 2 assets. "
-            "Each step should mention tools or MCP data to reuse. Call workflow.save_plan with the final steps."
-        ),
-        tools=[save_plan],
-        model="qwen:30b",
-        model_settings=ModelSettings(temperature=0.3),
-    )
-
-    reviewer_agent = Agent(
-        name="Reviewer Agent",
-        handoff_description="Stress-tests the workflow, adding guardrails.",
-        instructions=(
-            "Inspect the proposed workflow steps and add at least one risk or validation check per step. "
-            "Report them via workflow.log_risk and provide a concise reviewer summary."
-        ),
-        tools=[log_risk],
-        model="qwen:30b",
-        model_settings=ModelSettings(temperature=0.1),
-    )
-
-    coordinator = Agent(
-        name="Workflow Coordinator",
-        instructions=(
-            "Coordinate the multi-agent workflow in order:\n"
-            "1. Call the Research Agent to gather context.\n"
-            "2. Pass its insights to the Planner Agent to create steps.\n"
-            "3. Delegate to the Reviewer Agent for guardrails.\n"
-            "Finally, synthesize a JSON object with keys research, plan, and risks summarising the shared context."
-        ),
-        handoffs=[research_agent, planner_agent, reviewer_agent],
-        model="qwen:30b",
-        model_settings=ModelSettings(temperature=0.05),
-    )
-
-    prompt = (
-        "We need a Stage 3 workflow that prepares learners for multi-agent collaboration. "
-        "Follow the coordination plan."
-    )
-
-    state = WorkflowState()
-    print("> Running multi-agent workflow...\n")
-    result = await Runner.run(coordinator, prompt, context=state)
-
-    print("=== Final Coordinator Output ===")
-    print(result.final_output)
-
-    print("\n=== Captured Workflow State ===")
-    print("- Research notes:")
-    for note in state.research_notes:
-        print(f"  • {note}")
-
-    print("- Action items:")
-    for step in state.action_items:
-        print(f"  • {step}")
-
-    print("- Risks:")
-    for risk in state.risks:
-        print(f"  • {risk}")
+    ) as curriculum_server:
+    
+        research_agent = Agent(
+            name="Research Agent",
+            handoff_description="Gathers repository signals and curriculum facts.",
+            instructions=(
+                "Investigate the repository to find open TODOs and relevant workshop context. "
+                "Use the shell tool for quick file inspection and curriculum.fetch_stage_summary via MCP "
+                "to enrich your notes. After the tools run, summarise findings for the planner."
+            ),
+            tools=[capture_todos],
+            mcp_servers=[curriculum_server],
+            model=model,
+            model_settings=ModelSettings(temperature=0.2),
+        )
+    
+        planner_agent = Agent(
+            name="Planner Agent",
+            handoff_description="Transforms research into a concrete workflow plan.",
+            instructions=(
+                "Read the research summary and design a three-step workflow to improve the repo's Stage 2 assets. "
+                "Each step should mention tools or MCP data to reuse. Call workflow.save_plan with the final steps."
+            ),
+            tools=[save_plan],
+            model=model,
+            model_settings=ModelSettings(temperature=0.3),
+        )
+    
+        reviewer_agent = Agent(
+            name="Reviewer Agent",
+            handoff_description="Stress-tests the workflow, adding guardrails.",
+            instructions=(
+                "Inspect the proposed workflow steps and add at least one risk or validation check per step. "
+                "Report them via workflow.log_risk and provide a concise reviewer summary."
+            ),
+            tools=[log_risk],
+            model=model,
+            model_settings=ModelSettings(temperature=0.1),
+        )
+    
+        coordinator = Agent(
+            name="Workflow Coordinator",
+            instructions=(
+                "Coordinate the multi-agent workflow in order:\n"
+                "1. Call the Research Agent to gather context.\n"
+                "2. Pass its insights to the Planner Agent to create steps.\n"
+                "3. Delegate to the Reviewer Agent for guardrails.\n"
+                "Finally, synthesize a JSON object with keys research, plan, and risks summarising the shared context."
+            ),
+            handoffs=[research_agent, planner_agent, reviewer_agent],
+            model=model,
+            model_settings=ModelSettings(temperature=0.05),
+        )
+    
+        prompt = (
+            "We need a Stage 3 workflow that prepares learners for multi-agent collaboration. "
+            "Follow the coordination plan."
+        )
+    
+        state = WorkflowState()
+        print("> Running multi-agent workflow...\n")
+        result = await Runner.run(coordinator, prompt, context=state)
+    
+        print("=== Final Coordinator Output ===")
+        print(result.final_output)
+    
+        print("\n=== Captured Workflow State ===")
+        print("- Research notes:")
+        for note in state.research_notes:
+            print(f"  • {note}")
+    
+        print("- Action items:")
+        for step in state.action_items:
+            print(f"  • {step}")
+    
+        print("- Risks:")
+        for risk in state.risks:
+            print(f"  • {risk}")
 
 
 if __name__ == "__main__":

@@ -16,10 +16,6 @@ Build your first OpenAI Agents SDK project end-to-end. By the end of this stage 
 docker compose up -d               # starts the Ollama daemon and workshop shell container
 docker compose exec ollama ollama pull qwen:30b   # (first time only, downloads the model)
 docker compose exec workshop bash
-
-# Inside the container
-pip install -r requirements.txt   # optional; keeps packages aligned with requirements.txt
-python --version
 ```
 
 The `ollama pull` command is only required the first time (or when you want to update/swap the model); it downloads `qwen:30b` into the shared volume mounted at `/root/.ollama`.
