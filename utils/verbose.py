@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import sys
 from textwrap import shorten
 from typing import Any, Callable
 
@@ -27,11 +29,42 @@ class VerboseRunHooks(RunHooksBase[Any, Agent[Any]]):
     Lightweight tracing hooks that print key lifecycle events while an agent runs.
     """
 
-    def __init__(self, emit: Callable[[str], None] | None = None) -> None:
+    CHANNEL_COLORS = {
+        "agent": "\033[36m",  # cyan
+        "tool": "\033[33m",  # yellow
+        "handoff": "\033[35m",  # magenta
+        "llm": "\033[32m",  # green
+        "default": "\033[37m",  # white
+    }
+    RESET_COLOR = "\033[0m"
+
+    def __init__(
+        self,
+        emit: Callable[[str], None] | None = None,
+        use_color: bool | None = None,
+    ) -> None:
         self._emit = emit or print
+        self._use_color = use_color if use_color is not None else sys.stdout.isatty()
 
     def _log(self, channel: str, message: str) -> None:
-        self._emit(f"[verbose][{channel}] {message}")
+        prefix = f"[verbose][{channel}]"
+        if self._use_color:
+            color = self.CHANNEL_COLORS.get(channel, self.CHANNEL_COLORS["default"])
+            prefix = f"{color}{prefix}{self.RESET_COLOR}"
+        self._emit(f"{prefix} {message}")
+
+    def _format_tool_args(self, context: RunContextWrapper[Any]) -> str | None:
+        raw_args = getattr(context, "tool_arguments", None)
+        if not raw_args:
+            return None
+        serialized = raw_args
+        if isinstance(raw_args, str):
+            try:
+                parsed = json.loads(raw_args)
+                serialized = json.dumps(parsed, ensure_ascii=False)
+            except Exception:
+                serialized = raw_args
+        return _compact(str(serialized))
 
     async def on_agent_start(
         self, context: RunContextWrapper[Any], agent: Agent[Any]
@@ -62,7 +95,9 @@ class VerboseRunHooks(RunHooksBase[Any, Agent[Any]]):
         agent: Agent[Any],
         tool: Tool,
     ) -> None:
-        self._log("tool", f"{_agent_name(agent)} calling {_tool_name(tool)}")
+        args_preview = self._format_tool_args(context)
+        suffix = f" args={args_preview}" if args_preview else ""
+        self._log("tool", f"{_agent_name(agent)} calling {_tool_name(tool)}{suffix}")
 
     async def on_tool_end(
         self,
