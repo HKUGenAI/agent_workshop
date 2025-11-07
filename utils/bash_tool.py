@@ -7,7 +7,7 @@ from pathlib import Path
 from agents import ToolOutputText, function_tool
 
 WORKSPACE_ROOT = Path("/workspace").resolve()
-ALLOWED_COMMANDS = {"ls", "pwd", "cat", "head", "tail", "stat"}
+ALLOWED_COMMANDS = {"ls", "pwd", "cat", "head", "tail", "stat", "wc", "find", "grep"}
 
 
 def _build_command_args(command: str) -> list[str]:

@@ -22,6 +22,7 @@ from agents import (
 from agents.mcp import MCPServerStdio, MCPServerStdioParams
 
 from utils.cli import build_verbose_hooks, parse_common_args
+from utils.bash_tool import run_bash_command
 
 WORKSPACE_ROOT = Path("/workspace").resolve()
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -131,7 +132,7 @@ async def main(verbose: bool = False) -> None:
                 "Use the shell tool for quick file inspection and curriculum.fetch_stage_summary via MCP "
                 "to enrich your notes. After the tools run, summarise findings for the planner."
             ),
-            tools=[capture_todos],
+            tools=[capture_todos, run_bash_command],
             mcp_servers=[curriculum_server],
             model=model,
             model_settings=ModelSettings(temperature=0.2),
