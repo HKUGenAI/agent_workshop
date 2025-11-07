@@ -7,7 +7,7 @@ from agents import Agent
 from agents.items import ModelResponse
 from agents.lifecycle import RunHooksBase
 from agents.run_context import RunContextWrapper
-from agents.tool import Tool
+from agents.tool import Tool, ToolOutputText
 
 
 def _agent_name(agent: Agent[Any]) -> str:
@@ -69,8 +69,9 @@ class VerboseRunHooks(RunHooksBase[Any, Agent[Any]]):
         context: RunContextWrapper[Any],
         agent: Agent[Any],
         tool: Tool,
-        result: str,
+        result: str | ToolOutputText,
     ) -> None:
+        result = result.text if isinstance(result, ToolOutputText) else result
         preview = _compact(result) if result else ""
         suffix = f": {preview}" if preview else ""
         self._log("tool", f"{_agent_name(agent)} completed {_tool_name(tool)}{suffix}")

@@ -1,91 +1,55 @@
-# Stage 1 · Minimum Viable Agent
+# Stage 1 · Custom Bash Tool
 
-Build your first OpenAI Agents SDK project end-to-end. By the end of this stage you will be able to configure a minimal agent, connect it to a pre-defined tool, and execute it against the locally hosted `qwen:30b` Ollama model.
+Stage 0 confirmed the SDK wiring with a mock weather tool. Stage 1 levels up by letting the model run *real* shell commands via a bespoke `@function_tool` that enforces a tight allowlist.
 
 ## Learning Goals
 
-- Understand the shape of an `Agent` and the role of the `Runner`.
-- Configure the SDK to talk to a self-hosted Ollama endpoint.
-- Use the built-in `LocalShellTool` safely by creating a restricted shell executor.
-- Run the agent with `python` inside the provided Docker environment.
+- Wrap subprocess calls with `function_tool` and return structured `ToolOutputText`.
+- Enforce guardrails (command allowlist, workspace path checks, timeouts, truncation).
+- Guide an agent so it calls the tool deliberately and reports what it executed.
 
-## 1. Environment Check
+## 1. The `bash.run` Tool
 
-```bash
-# From the repository root
-docker compose up -d               # starts the Ollama daemon and workshop shell container
-docker compose exec ollama ollama pull qwen:30b   # (first time only, downloads the model)
-docker compose exec workshop bash
-```
+Implementation: `utils/bash_tool.py`
 
-The `ollama pull` command is only required the first time (or when you want to update/swap the model); it downloads `qwen:30b` into the shared volume mounted at `/root/.ollama`.
+- Accepts commands like `ls`, `pwd`, `cat`, `head`, `tail`, `stat`.
+- Validates that every argument stays under `/workspace`.
+- Uses `subprocess.run(..., timeout=5, capture_output=True)` so results are streamed back safely.
+- Returns a `ToolOutputText` payload summarising stdout/stderr plus the exit code.
 
-The compose file wires `OPENAI_BASE_URL=http://ollama:11434/v1`, so the Agents SDK automatically talks to the local Ollama runtime. `OPENAI_API_KEY` is set to the placeholder value `ollama` because the Agents SDK expects a key-shaped secret even when targeting a local endpoint.
+Feel free to extend the allowlist or the output formatting once you are comfortable with the basics.
 
-## 2. Key Concepts
+## 2. Demo Walkthrough
 
-- **Agent** — declarative definition of behaviour (instructions, model, tools, guardrails).
-- **Runner** — orchestrates an agent run, resolving tool calls and streaming events.
-- **Tools** — capabilities that the model can call. In this stage we stick to a *built-in* tool: `LocalShellTool`.
-- **Model Settings** — optional tuning knobs (temperature, max_prompt_tokens, etc).
+File: `stages/stage1/demo.py`
 
-### LocalShellTool Primer
+- Imports `run_bash_command` and exposes it to the agent as the `bash.run` tool.
+- Instructions remind the model to cite the commands it used.
+- The prompt asks for: root directories, Dockerfile presence, and a suggested next command.
 
-`LocalShellTool` lets a model run commands on the same machine. To keep learners safe the SDK requires you to provide a `LocalShellExecutor`. You decide which commands are allowed and how to surface the output. Think of it as a whitelist-protected shell.
-
-## 3. Walkthrough Example
-
-Open `stages/stage1/demo.py` — it contains a fully working minimal agent. The important parts are annotated inline. Run it as a module from the repo root so shared utilities are importable without hacks:
+Run it:
 
 ```bash
 python -m stages.stage1.demo
+# append --verbose to stream the tool calls in real time
 ```
 
-Add `--verbose` to stream the agent's lifecycle events (tool calls, handoffs, LLM invocations) while debugging.
+You should see the agent call `bash.run` a few times before composing the final answer.
 
-Expected output (trimmed):
-
-```
-> Asking the agent: "List the root level files in this project."
-
-• Agent reasoning, tool use, and final message streaming in the console …
-• Final answer that summarises the directory listing
-```
-
-If the agent reports that a command is blocked you can adjust the whitelist inside `safe_shell_executor`.
-
-### What to Notice
-
-- The agent is configured with `model="qwen:30b"`. Because the `docker-compose.yml` sets `OPENAI_BASE_URL`, no extra code is needed to target Ollama.
-- `Runner.run(...)` returns a `RunResult`. `result.final_output` holds the assistant’s reply as a string.
-- The executor implements the safety guardrails: only `pwd`, `ls`, and `cat` are allowed and every command gets a short timeout.
-
-## 4. Activity
+## 3. Activity
 
 File: `stages/stage1/activity/starter_agent.py`
 
-> You are writing a "project scout" agent. It should use the shell tool to inspect the repository and respond with a short report that includes:
->
-> 1. The root level directories.
-> 2. Whether a `Dockerfile` is present.
-> 3. A suggested next command the learner should run.
->
-> Extend the starter script so that the agent:
-> - Updates its system instructions to reflect the reporting goal.
-> - Adjusts the whitelist if it needs additional commands (e.g. `cat Dockerfile`).
-> - Formats the final output as a Markdown checklist.
+Goal: design a “project scout” agent that:
 
-Run your agent the same way:
+1. Uses `bash.run` to gather filesystem evidence.
+2. Produces a Markdown checklist covering root directories, Dockerfile status, and a recommended next command.
+3. Explains which shell commands were executed (for auditability).
 
-```bash
-python -m stages.stage1.activity.starter_agent
-```
+The starter already wires `run_bash_command` into the agent. Your tasks:
 
-Use `--verbose` here as well if you want to watch the shell/tool calls as they happen.
+- Re-write the system instructions so the agent knows the required sections and when to call the tool.
+- Expand the allowlist or timeout (in `utils/bash_tool.py`) if your scenario needs extra commands.
+- Craft a focused user prompt (the placeholder “Draft the initial project scout report.” is just a stub).
 
-**Stretch ideas**
-
-- Capture the raw tool output (command results) in the agent context and reuse it in the final message.
-- Tune `ModelSettings(temperature=0.3)` and observe how output style changes.
-
-Once you are comfortable with the tooling, move to Stage 2 to build custom tools and MCP integrations.
+Once this stage feels comfortable, continue to Stage 2 to combine custom tools with a FastMCP server.

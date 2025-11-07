@@ -1,5 +1,5 @@
 """
-Stage 1 demo: minimal agent that uses the built-in LocalShellTool to explore the repo.
+Stage 1 demo: custom bash function tool that lets the agent inspect the repo safely.
 Run with: python -m stages.stage1.demo
 """
 
@@ -7,36 +7,36 @@ from __future__ import annotations
 
 import asyncio
 
-from agents import Agent, ModelSettings, Runner, function_tool
+from agents import Agent, ModelSettings, Runner
 
+from utils.bash_tool import run_bash_command
 from utils.cli import build_verbose_hooks, parse_common_args
 from utils.ollama_adaptor import model
 
 
-@function_tool
-async def get_weather_tool(city: str):
-    """
-    Mock tool to get weather information for a city.
-    """
-    return "Sunny, 25°C"  # Mocked response for demonstration
-
-
 async def main(verbose: bool = False) -> None:
     hooks = build_verbose_hooks(verbose)
-    explorer = Agent(
-        name="Weather Explorer",
+    repo_explorer = Agent(
+        name="Bash Repo Explorer",
         instructions=(
-            "You are a helpful agent that provides weather information for cities. "
+            "You are auditing the repository. Use the bash.run tool to execute safe shell commands "
+            "such as ls, pwd, cat, head, tail, or stat. Summarise what you inspect and cite the "
+            "commands you executed."
         ),
-        tools=[get_weather_tool],
+        tools=[run_bash_command],
         model=model,
-        model_settings=ModelSettings(temperature=0.2),
+        model_settings=ModelSettings(temperature=0.25),
     )
 
-    question = "What's the weather like in San Francisco today?"
+    prompt = (
+        "Give me a quick project status:\n"
+        "1. List the root directories.\n"
+        "2. Confirm whether a Dockerfile exists.\n"
+        "3. Suggest the next shell command I should run."
+    )
 
-    print("> Asking the agent:", question)
-    result = await Runner.run(explorer, question, hooks=hooks)
+    print("> Running Bash Repo Explorer...\n")
+    result = await Runner.run(repo_explorer, prompt, hooks=hooks)
 
     print("\n=== Final Answer ===")
     print(result.final_output)

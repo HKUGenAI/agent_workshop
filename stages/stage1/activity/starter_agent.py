@@ -1,7 +1,7 @@
 """
 Stage 1 activity starter.
 
-Goal: build a "project scout" agent that reports on repository structure.
+Goal: build a "project scout" agent that reports on repository structure using the custom bash tool.
 Run with: python -m stages.stage1.activity.starter_agent
 """
 
@@ -11,6 +11,7 @@ import asyncio
 
 from agents import Agent, ModelSettings, Runner
 
+from utils.bash_tool import run_bash_command
 from utils.cli import build_verbose_hooks, parse_common_args
 from utils.ollama_adaptor import model
 
@@ -22,9 +23,11 @@ async def run_activity(verbose: bool = False) -> None:
         name="Project Scout",
         instructions=(
             "Replace this text with system guidance that asks for a Markdown checklist "
-            "covering: root directories, Dockerfile presence, and a recommended next command."
+            "covering: root directories, Dockerfile presence, and a recommended next command. "
+            "Whenever you need filesystem data, call bash.run with commands like 'ls stages' or "
+            "'cat Dockerfile'."
         ),
-        tools=[],  # TODO: Add tools if needed for your designed flow.
+        tools=[run_bash_command],
         model=model,
         model_settings=ModelSettings(temperature=0.2),
     )
