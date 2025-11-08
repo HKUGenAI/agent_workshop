@@ -17,6 +17,6 @@ set_default_openai_client(client)
 set_tracing_disabled(True)
 
 model = OpenAIChatCompletionsModel(
-    model="qwen3:4b",
+    model="qwen3:30b",
     openai_client=client
 )

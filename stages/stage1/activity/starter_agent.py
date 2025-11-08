@@ -198,7 +198,7 @@ async def run_activity(verbose: bool = False) -> None:
             f"Focus file: `{TASK_FILE}`. Implement `format_stage_report` to match the\n"
             "spec in that file by calling the provided tools.\n\n"
             "Workflow:\n"
-            f"1. Use `bash.run` commands such as `cat {TASK_FILE}` plus `read.file`\n"
+            f"1. Use `read.file`\n"
             "   (with optional line ranges) to read the task and gather any additional\n"
             "   context you need.\n"
             "2. Outline your plan before editing so the reviewer understands your\n"
@@ -206,15 +206,15 @@ async def run_activity(verbose: bool = False) -> None:
             "3. Call `write.file` with either the *entire* updated file contents or use\n"
             "   the `start_line`/`end_line` parameters for a surgical replacement.\n"
             "   (Append mode only adds text to the end of a file.)\n"
-            "4. Verify the change by re-reading the file or running\n"
-            "   `python -m stages.stage1.activity.code_task` via `bash.run`.\n"
+            "4. Verify the change by re-reading the file\n"
+            # "   `python -m stages.stage1.activity.code_task` via `bash.run`.\n"
             "5. In your final response, summarize what you changed and cite the specific\n"
             "   commands/tools that informed your work."
         ),
         tools=[
             run_bash_command,
-            read_text_file,  # Remove read_text_file to turn this into the student activity.
-            write_text_file,  # Remove write_text_file to turn this into the student activity.
+            read_text_file, 
+            write_text_file,  
         ],
         model=model,
         model_settings=ModelSettings(temperature=0.2),
