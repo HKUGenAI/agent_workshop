@@ -38,27 +38,45 @@ You should see the agent call `bash.run` a few times before composing the final 
 
 ## 3. Activity
 
-File: `stages/stage1/activity/starter_agent.py`
+Files:
 
-Goal: design a "workshop analyzer" agent that:
+- `stages/stage1/activity/starter_agent.py`
+- `stages/stage1/activity/code_task.py`
 
-1. Uses `bash.run` to explore the workshop codebase structure.
-2. Reads and analyzes README files across all stages to understand their content.
-3. Produces a comprehensive Markdown summary of what each stage teaches.
-4. Provides brief previews of stages 2 and 3 content.
-5. Cites the files and commands used for information gathering.
+Goal: build a "write-enabled" agent that can inspect the repository, add its
+own `read.file`/`write.file` tools, and then use them to finish the coding task
+inside `code_task.py`.
 
-The starter already wires `run_bash_command` into the agent. Your tasks:
+### What to Build
 
-- Re-write the system instructions so the agent knows to analyze workshop content and structure.
-- Expand the allowlist or timeout (in `utils/bash_tool.py`) if your scenario needs extra commands.
-- Craft a focused user prompt (the placeholder "Analyze this workshop codebase..." is already provided).
+1. Implement a `read.file` function tool that:
+   - Prints numbered lines (with optional `start_line`/`end_line` arguments).
+   - Enforces the same workspace guardrails as `bash.run`.
+2. Implement a `write.file` function tool that:
+   - Writes UTF-8 text to files under `/workspace`.
+   - Supports an `overwrite` mode (default) and an `append` mode.
+   - Accepts optional `start_line`/`end_line` parameters to replace only a
+     slice of the file.
+   - Rejects attempts to escape the workspace or overwrite directories.
+3. Guide the agent (via system/user instructions) to:
+   - Read `code_task.py` with `bash.run`/`read.file` to understand the
+     specification for `format_stage_report`.
+   - Plan the change before writing.
+   - Call `write.file` with the *entire* new file contents or use a precise
+     line-range replacement to implement the function.
+   - Optionally run `python -m stages.stage1.activity.code_task` to preview the
+     behavior once implemented.
+4. Summarize the work, citing any files or commands used.
 
-To run your agent:
+The starter already wires `run_bash_command` into the agent. Update the system
+instructions and user prompt so the agent focuses on finishing `code_task.py`.
+
+Run your agent with:
 
 ```bash
 python -m stages.stage1.activity.starter_agent --verbose
 # append --verbose to stream the tool calls in real time
 ```
 
-Once this stage feels comfortable, continue to Stage 2 to combine custom tools with a FastMCP server.
+Once this stage feels comfortable, continue to Stage 2 to combine custom tools
+with a FastMCP server.
