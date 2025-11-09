@@ -6,7 +6,7 @@ from textwrap import shorten
 from typing import Any, Callable
 
 from agents import Agent
-from agents.items import ModelResponse
+from agents.items import ModelResponse, ResponseOutputMessage
 from agents.lifecycle import RunHooksBase
 from agents.run_context import RunContextWrapper
 from agents.tool import Tool, ToolOutputText
@@ -134,14 +134,11 @@ class VerboseRunHooks(RunHooksBase[Any, Agent[Any]]):
         agent: Agent[Any],
         response: ModelResponse,
     ) -> None:
-        response_id = response.response_id or "n/a"
-        usage = getattr(response, "usage", None)
-        tokens = getattr(usage, "total_tokens", None) if usage else None
-        usage_hint = f", tokens={tokens}" if tokens is not None else ""
-        self._log(
-            "llm",
-            f"{_agent_name(agent)} received response_id={response_id}{usage_hint}",
-        )
+        if response.output and isinstance(response.output[0], ResponseOutputMessage):
+            self._log(
+                "llm",
+                f"Response content: {response.output[0].content[0].text}",
+            )
 
 
 def build_verbose_hooks(enabled: bool) -> VerboseRunHooks | None:
