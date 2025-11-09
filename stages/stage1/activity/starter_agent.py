@@ -117,12 +117,11 @@ def _replace_line_range(
 def write_text_file(
     path: str,
     content: str,
-    mode: str = "overwrite",
     start_line: int | None = None,
     end_line: int | None = None,
 ) -> ToolOutputText:
     """
-    Write UTF-8 text to a workspace file with optional line-range replacement.
+    Replace a specific line range in a workspace file with UTF-8 text.
 
     Activity author note: delete the implementation below this docstring to hand
     learners a partially completed write tool.
@@ -132,61 +131,40 @@ def write_text_file(
     except ValueError as exc:
         return ToolOutputText(text=str(exc))
 
-    normalized = mode.lower()
-    if normalized not in {"overwrite", "append"}:
+    if start_line is None or end_line is None:
         return ToolOutputText(
-            text="Invalid mode. Use 'overwrite' (default) or 'append'."
+            text="write.file only supports line-range replacements; provide start_line and end_line."
         )
-
-    if start_line is not None or end_line is not None:
-        if normalized == "append":
-            return ToolOutputText(
-                text="Line-range edits cannot be combined with append."
-            )
-        if start_line is None or end_line is None:
-            return ToolOutputText(
-                text="Provide both start_line and end_line for a targeted replacement."
-            )
-        try:
-            original = target.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            return ToolOutputText(
-                text="File does not exist yet; create it with an overwrite before using line ranges."
-            )
-        except OSError as exc:
-            return ToolOutputText(text=f"Failed to read file: {exc}")
-
-        try:
-            updated = _replace_line_range(
-                original,
-                start_line,
-                end_line,
-                content,
-            )
-        except ValueError as exc:
-            return ToolOutputText(text=str(exc))
-
-        try:
-            target.write_text(updated, encoding="utf-8")
-        except OSError as exc:
-            return ToolOutputText(text=f"Failed to write file: {exc}")
-        return ToolOutputText(
-            text=(
-                f"Replaced lines {start_line}-{end_line} in {path} "
-                f"with {len(content)} characters."
-            )
-        )
-
-    file_mode = "w" if normalized == "overwrite" else "a"
 
     try:
-        with target.open(file_mode, encoding="utf-8") as handle:
-            handle.write(content)
+        original = target.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ToolOutputText(
+            text="File does not exist yet; populate it before using write.file."
+        )
+    except OSError as exc:
+        return ToolOutputText(text=f"Failed to read file: {exc}")
+
+    try:
+        updated = _replace_line_range(
+            original,
+            start_line,
+            end_line,
+            content,
+        )
+    except ValueError as exc:
+        return ToolOutputText(text=str(exc))
+
+    try:
+        target.write_text(updated, encoding="utf-8")
     except OSError as exc:
         return ToolOutputText(text=f"Failed to write file: {exc}")
-
-    action = "overwritten" if normalized == "overwrite" else "appended"
-    return ToolOutputText(text=f"{path} {action} with {len(content)} characters.")
+    return ToolOutputText(
+        text=(
+            f"Replaced lines {start_line}-{end_line} in {path} "
+            f"with {len(content)} characters."
+        )
+    )
 
 
 async def run_activity(verbose: bool = False) -> None:
@@ -203,9 +181,8 @@ async def run_activity(verbose: bool = False) -> None:
             "   context you need.\n"
             "2. Outline your plan before editing so the reviewer understands your\n"
             "   approach.\n"
-            "3. Call `write.file` with either the *entire* updated file contents or use\n"
-            "   the `start_line`/`end_line` parameters for a surgical replacement.\n"
-            "   (Append mode only adds text to the end of a file.)\n"
+            "3. Call `write.file` with the `start_line`/`end_line` parameters to perform\n"
+            "   targeted replacements inside the file.\n"
             "4. Verify the change by re-reading the file\n"
             # "   `python -m stages.stage1.activity.code_task` via `bash.run`.\n"
             "5. In your final response, summarize what you changed and cite the specific\n"
@@ -213,8 +190,8 @@ async def run_activity(verbose: bool = False) -> None:
         ),
         tools=[
             run_bash_command,
-            read_text_file, 
-            write_text_file,  
+            read_text_file,
+            write_text_file,
         ],
         model=model,
         model_settings=ModelSettings(temperature=0.2),
