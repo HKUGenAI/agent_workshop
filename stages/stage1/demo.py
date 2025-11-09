@@ -9,7 +9,7 @@ import asyncio
 
 from agents import Agent, ModelSettings, Runner
 
-from utils.bash_tool import run_bash_command
+from utils.tools.bash import run_bash_command
 from utils.cli import build_verbose_hooks, parse_common_args
 from utils.ollama_adaptor import model
 

@@ -6,7 +6,8 @@ from textwrap import shorten
 from typing import Any, Callable
 
 from agents import Agent
-from agents.items import ModelResponse, ResponseOutputMessage
+from agents.items import ModelResponse
+from openai.types.responses import ResponseOutputMessage
 from agents.lifecycle import RunHooksBase
 from agents.run_context import RunContextWrapper
 from agents.tool import Tool, ToolOutputText
