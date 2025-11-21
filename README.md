@@ -15,8 +15,8 @@ docker compose exec workshop bash   # Get into the workshop container
 - `Dockerfile`, `docker-compose.yml` — reproducible environment with Python + Ollama.
 - `stages/stage0` — orientation demo that proves the SDK wiring.
 - `stages/stage1` — custom bash function tool for repository exploration.
-- `stages/stage2` — custom function tools blended with a FastMCP curriculum server.
-- `stages/stage3` — multi-agent workflows with shared context and handoffs.
+- `stages/stage2` — custom function tools for outfit recommendations blended with an external weather MCP server.
+- `stages/stage3` — multi-agent workflows simulating a "Red Team vs. Blue Team" security audit of a code file.
 
 Each stage directory contains:
 

@@ -1,8 +1,11 @@
 """
-Stage 3 Activity: Red Team vs. Blue Team Security Audit.
+Stage 3 Activity: Red Team vs. Blue Team (File-Based).
 
-Objective: Orchestrate an adversarial workflow where a Defender (Blue) and Attacker (Red)
-iterate on a configuration until it meets the CISO's standards.
+Objective:
+  A vulnerable `server.py` exists on disk.
+  - Red Team reads the code and reports vulnerabilities.
+  - Blue Team reads the code and rewrites it to fix the issues.
+  - CISO coordinates the loop until the file is clean.
 
 Run with: python -m stages.stage3.activity.starter_workflow
 """
@@ -11,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
 from agents import (
@@ -27,114 +31,128 @@ from utils.cli import build_verbose_hooks, parse_common_args
 from utils.ollama_adaptor import model
 
 
+# --- Setup: The Vulnerable File ---
+
+TARGET_FILE = Path(__file__).parent / "server.py"
+
 # --- Shared State ---
 
 @dataclass
 class AuditState:
-    """Shared context representing the 'battleground'."""
-    proposed_config: str = ""
+    """Tracks the audit progress."""
     vulnerabilities: list[str] = field(default_factory=list)
     iteration: int = 0
 
 
-# --- Final Output Schema ---
+# --- Output Schema ---
 
 class SecurityReport(BaseModel):
-    final_config: str
+    final_file_path: str
     resolved_issues: list[str]
-    approval_status: Literal["APPROVED", "REJECTED"]
-    total_iterations: int
+    status: Literal["SECURE", "UNSAFE"]
+    iterations: int
 
 
 # --- Tools ---
 
-@function_tool(name_override="audit.submit_config")
-def submit_config(
+@function_tool(name_override="fs.read_code")
+def read_code() -> str:
+    """Read the current content of 'server.py'."""
+    if not TARGET_FILE.exists():
+        return "Error: server.py does not exist."
+    return TARGET_FILE.read_text(encoding="utf-8")
+
+
+@function_tool(name_override="fs.rewrite_code")
+def rewrite_code(
     ctx: RunContextWrapper[AuditState],
-    config_content: str,
-    comment: str = "",
-) -> ToolOutputText:
+    new_content: str,
+    fix_summary: str,
+) -> str:
     """
-    (Blue Team) Propose or update the system configuration.
-    """
-    ctx.context.proposed_config = config_content
-    ctx.context.iteration += 1
-    # Clear old vulnerabilities since we are submitting a fix
-    old_vulns = len(ctx.context.vulnerabilities)
-    ctx.context.vulnerabilities.clear()
+    (Blue Team) Overwrite 'server.py' with fixed code.
     
-    return ToolOutputText(
-        text=f"Config updated (Iteration {ctx.context.iteration}). Previous vulnerabilities cleared: {old_vulns}. Comment: {comment}"
-    )
+    Args:
+        new_content: The complete Python code to write.
+        fix_summary: Brief description of what was fixed.
+    """
+    TARGET_FILE.write_text(new_content, encoding="utf-8")
+    
+    # Clear vulnerabilities as we are attempting a fix
+    count = len(ctx.context.vulnerabilities)
+    ctx.context.vulnerabilities.clear()
+    ctx.context.iteration += 1
+    
+    return f"File rewritten. Cleared {count} reported vulnerabilities. Fix: {fix_summary}"
 
 
-@function_tool(name_override="audit.report_vulnerability")
-def report_vulnerability(
+@function_tool(name_override="audit.report_issue")
+def report_issue(
     ctx: RunContextWrapper[AuditState],
-    severity: Literal["low", "medium", "high", "critical"],
+    severity: Literal["high", "medium", "low"],
     description: str,
 ) -> str:
     """
-    (Red Team) Log a security flaw found in the current config.
+    (Red Team) Report a specific security issue found in the code.
     """
     entry = f"[{severity.upper()}] {description}"
     ctx.context.vulnerabilities.append(entry)
-    return f"Vulnerability logged: {entry}"
+    return f"Logged issue: {entry}"
 
 
 # --- Main Workflow ---
 
 async def main(verbose: bool = False) -> None:
+    # 1. Setup the environment
     hooks = build_verbose_hooks(verbose)
     state = AuditState()
 
-    # 1. Blue Team: The Defender
-    # Responsibility: Create the initial config and fix reported issues.
+    # 2. Define Agents
     blue_agent = Agent(
         name="Blue Team",
-        handoff_description="Updates the configuration to fix vulnerabilities.",
+        handoff_description="Fixes code vulnerabilities.",
         instructions=(
-            "You are the System Administrator. Your goal is to secure a web server configuration.\n"
-            "1. If the config is empty, propose a basic JSON config (port, debug_mode, admin_user).\n"
-            "2. If vulnerabilities are reported, edit the config to fix them (e.g., disable debug, change default ports).\n"
-            "3. Always use 'audit.submit_config' to save your changes."
+            "You are a Secure Code Specialist.\n"
+            "1. Read 'server.py' using `fs.read_code`.\n"
+            "2. Analyze the reported vulnerabilities.\n"
+            "3. Rewrite the ENTIRE file using `fs.rewrite_code` to fix the issues.\n"
+            "   - Remove hardcoded passwords (use os.getenv).\n"
+            "   - Use `subprocess.run` safely or validate inputs instead of `os.system`.\n"
+            "   - Disable debug mode."
         ),
-        tools=[submit_config],
+        tools=[read_code, rewrite_code],
         model=model,
         model_settings=ModelSettings(temperature=0.2),
     )
 
-    # 2. Red Team: The Attacker
-    # Responsibility: Find flaws.
     red_agent = Agent(
         name="Red Team",
-        handoff_description="Audits the configuration for security flaws.",
+        handoff_description="Audits code for security flaws.",
         instructions=(
-            "You are an Ethical Hacker. Inspect the 'proposed_config' in the context.\n"
-            "Look for common mistakes:\n"
-            "- Debug mode enabled\n"
-            "- Default admin credentials\n"
-            "- Insecure ports (e.g., 80 instead of 443)\n"
-            "- Missing encryption settings\n"
-            "Use 'audit.report_vulnerability' to log EVERY issue you find. If it looks perfect, say 'No issues found'."
+            "You are a Penetration Tester.\n"
+            "1. Read 'server.py' using `fs.read_code`.\n"
+            "2. Look for:\n"
+            "   - Command Injection (e.g., os.system with user input)\n"
+            "   - Hardcoded secrets\n"
+            "   - Debug flags\n"
+            "   - Insecure bindings (0.0.0.0)\n"
+            "3. Use `audit.report_issue` for EACH finding.\n"
+            "4. If the code is clean, say 'No issues found'."
         ),
-        tools=[report_vulnerability],
+        tools=[read_code, report_issue],
         model=model,
         model_settings=ModelSettings(temperature=0.4),
     )
 
-    # 3. CISO: The Coordinator/Judge
-    # Responsibility: Decide loop or finish.
     ciso_agent = Agent(
         name="CISO",
         instructions=(
-            "You manage the security audit lifecycle.\n"
-            "Step 1: Call Blue Team to draft/fix the config.\n"
-            "Step 2: Call Red Team to audit the new config.\n"
-            "Step 3: Review the state.\n"
-            "   - If vulnerabilities exist: Loop back to Step 1 (Blue Team).\n"
-            "   - If NO vulnerabilities AND config is not empty: Output the final SecurityReport JSON with status APPROVED.\n"
-            "   - Limit to 3 iterations max. If still failing, output REJECTED."
+            "Orchestrate the security audit of 'server.py'.\n"
+            "Phase 1: Call Red Team to scan the code.\n"
+            "Phase 2: Check results.\n"
+            "   - If vulnerabilities found: Call Blue Team to fix them. Then loop back to Red Team.\n"
+            "   - If NO vulnerabilities found: Output the final SecurityReport (Status: SECURE).\n"
+            "   - If iteration > 3: Abort and output SecurityReport (Status: UNSAFE)."
         ),
         handoffs=[blue_agent, red_agent],
         model=model,
@@ -142,12 +160,12 @@ async def main(verbose: bool = False) -> None:
         output_type=SecurityReport,
     )
 
-    print("> Starting Red Team vs. Blue Team Audit...")
+    # 3. Run
+    print("> Starting Code Audit Simulation...\n")
     
-    # We provide an empty starting prompt because the CISO instructions drive the flow.
     result = await Runner.run(
         ciso_agent, 
-        "Secure the web server configuration.", 
+        "Audit the server.py file until it is secure.", 
         context=state, 
         hooks=hooks
     )
@@ -156,7 +174,11 @@ async def main(verbose: bool = False) -> None:
 
     print("\n=== Final Security Report ===")
     print(report.model_dump_json(indent=2))
-    print(f"\nFinal Config:\n{report.final_config}")
+    
+    print(f"\nFinal Code Content ({TARGET_FILE.name}):")
+    print("-" * 40)
+    print(TARGET_FILE.read_text(encoding="utf-8"))
+    print("-" * 40)
 
 
 if __name__ == "__main__":
