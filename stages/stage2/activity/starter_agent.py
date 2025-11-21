@@ -1,7 +1,7 @@
 """
-Stage 2 activity starter.
+Stage 2 activity: Weather Assistant.
 
-Goal: craft a curriculum coach that combines a custom function tool and MCP data.
+Goal: Create an agent that uses a local MCP server (weather) and a custom tool (outfit recommendation).
 Run with: python -m stages.stage2.activity.starter_agent
 """
 
@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from pathlib import Path
 from typing import Literal
 
 from agents import Agent, ModelSettings, Runner, function_tool
@@ -20,91 +19,81 @@ from utils.cli import build_verbose_hooks, parse_common_args
 from utils.ollama_adaptor import model
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
-
-
-class LessonPlan(BaseModel):
-    stage: Literal["stage1", "stage2", "stage3"]
-    topic: str
-    learning_goals: list[str]
-    hands_on_activity: str
-    references: list[str] = Field(
-        default_factory=list, description="Links or MCP resources used"
+class WeatherForecast(BaseModel):
+    location: str
+    temperature: float
+    condition: str
+    outfit_recommendation: str
+    sources: list[str] = Field(
+        default_factory=list, description="Data sources used (e.g. MCP, custom tool)"
     )
 
 
-@function_tool(name_override="coach.draft_outline")
-def draft_outline(
-    stage: Literal["stage1", "stage2", "stage3"],
-    theme: str,
-    include_activity: bool = True,
-) -> LessonPlan:
+@function_tool
+def recommend_outfit(temperature: float, condition: str) -> str:
     """
-    Build a basic lesson plan scaffold for a workshop stage.
-
-    Args:
-        stage: Which stage the learner wants to review.
-        theme: Focus or narrative you want to emphasise (e.g. "tooling", "teamwork").
-        include_activity: Whether the plan should include a hands-on task suggestion.
+    Suggests appropriate clothing based on temperature (Celsius) and weather condition.
     """
-    # TODO: Replace this stub with logic that tailors the plan to the requested stage + theme.
-    return LessonPlan(
-        stage=stage,
-        topic=f"{stage.upper()} refresher on {theme}",
-        learning_goals=[
-            "Identify the core objective of the stage.",
-            "Explain which capabilities the learner gains.",
-            "Relate the stage activity to a real project scenario.",
-        ],
-        hands_on_activity=(
-            "Outline the modifications you would make to the stage activity to apply this theme."
-            if include_activity
-            else "Activity omitted."
-        ),
-        references=[
-            "Use curriculum.fetch_stage_summary via MCP for authoritative details.",
-            "Cite the stage activity README for implementation specifics.",
-        ],
-    )
+    recommendation = []
+    
+    if temperature < 10:
+        recommendation.append("Heavy coat, scarf, and gloves")
+    elif temperature < 20:
+        recommendation.append("Light jacket or sweater")
+    else:
+        recommendation.append("T-shirt and light trousers")
+
+    if "rain" in condition.lower() or "drizzle" in condition.lower():
+        recommendation.append("don't forget an umbrella or raincoat")
+    elif "snow" in condition.lower():
+        recommendation.append("wear waterproof boots")
+    elif "sunny" in condition.lower() and temperature > 20:
+        recommendation.append("wear sunglasses and a hat")
+
+    return ", ".join(recommendation) + "."
 
 
-CURRICULUM_SERVER_PARAMS = MCPServerStdioParams(
+# Configure the MCP server parameters to run the installed mcp_weather_server package
+WEATHER_SERVER_PARAMS = MCPServerStdioParams(
     command=sys.executable,
-    args=[str(REPO_ROOT / "stages/stage2/mcp_servers/curriculum_server.py")],
-    cwd=str(REPO_ROOT),
+    args=["-m", "mcp_weather_server"],
 )
 
 
 async def main(verbose: bool = False) -> None:
     hooks = build_verbose_hooks(verbose)
+    
+    # Start the MCP server as a subprocess
     async with MCPServerStdio(
-        params=CURRICULUM_SERVER_PARAMS,
+        params=WEATHER_SERVER_PARAMS,
         cache_tools_list=True,
-        name="Curriculum Server",
-    ) as curriculum_server:
-        curriculum_coach = Agent(
-            name="Curriculum Coach",
-            # TODO: Rewrite the instructions so the agent knows it must call both the custom tool
-            # and the MCP server before responding. Highlight the JSON output requirement.
+        name="Weather Server",
+    ) as weather_server:
+        
+        weather_agent = Agent(
+            name="Weather Assistant",
             instructions=(
-                "Update me! Describe how to use coach.draft_outline and curriculum.fetch_stage_summary "
-                "to assemble a JSON lesson plan."
+                "You are a helpful weather assistant. "
+                "1. Use the available weather MCP tool to get the forecast for the requested location. "
+                "2. Use the `recommend_outfit` tool to suggest clothing based on the temperature and condition found. "
+                "3. Return a structured JSON response with the forecast and recommendation."
             ),
-            tools=[draft_outline],
-            mcp_servers=[curriculum_server],
+            tools=[recommend_outfit],
+            mcp_servers=[weather_server],
             model=model,
-            model_settings=ModelSettings(temperature=0.25),
-            output_type=LessonPlan,
+            model_settings=ModelSettings(temperature=0.0),
+            output_type=WeatherForecast,
         )
 
-        # TODO: Provide a richer user prompt (e.g. include a target audience and learning depth).
-        query = "Generate a lesson plan for stage2 using the theme 'collaboration'."
+        # Example query
+        query = "What is the weather like in London? What should I wear?"
+        print(f"Query: {query}\n")
 
-        result = await Runner.run(curriculum_coach, query, hooks=hooks)
-        lesson_plan = result.final_output_as(LessonPlan)
+        result = await Runner.run(weather_agent, query, hooks=hooks)
+        forecast = result.final_output_as(WeatherForecast)
 
-        print("\n=== Lesson Plan (JSON) ===")
-        print(lesson_plan.model_dump_json(indent=2))
+        print("\n=== Weather Forecast (JSON) ===")
+        print(forecast.model_dump_json(indent=2))
 
 
 if __name__ == "__main__":

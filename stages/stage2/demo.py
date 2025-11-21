@@ -92,7 +92,7 @@ async def run_demo(verbose: bool = False) -> None:
 
         prompt = (
             "Prepare a short update for the instructor:\n"
-            "1. Summarise outstanding TODO markers in stages/stage1/activity/starter_agent.py\n"
+            "1. Summarise outstanding TODO markers in stages/stage2/activity/starter_agent.py\n"
             "2. Explain how Stage 2 builds on Stage 1 using the curriculum MCP data\n"
             "3. Suggest the next improvement task for the learner"
         )

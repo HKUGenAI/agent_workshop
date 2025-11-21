@@ -13,7 +13,7 @@ import asyncio
 
 from agents import Agent, ModelSettings, Runner
 
-from utils.tools import run_bash_command, read_text_file, write_text_file
+from utils.tools import run_bash_command, write_text_file
 from utils.cli import build_verbose_hooks, parse_common_args
 from utils.ollama_adaptor import model
 
@@ -42,7 +42,6 @@ async def run_activity(verbose: bool = False) -> None:
         ),
         tools=[
             run_bash_command,
-            read_text_file,
             write_text_file,
         ],
         model=model,

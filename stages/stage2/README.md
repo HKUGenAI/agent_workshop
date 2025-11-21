@@ -5,8 +5,8 @@ Time to augment the base agent with bespoke capabilities. You will create a stru
 ## Learning Goals
 
 - Design custom tools using `@function_tool` and strict docstrings.
-- Build a lightweight MCP server with `FastMCP` and connect via stdio.
-- Combine multiple capabilities within a single agent run.
+- Connect to an existing MCP server (`mcp_weather_server`) via stdio.
+- Combine multiple capabilities (custom logic + external data) within a single agent run.
 - Observe tool call traces with verbose logging.
 
 ## 1. Prerequisites
@@ -15,7 +15,6 @@ Carry over the Docker environment from Stage 1:
 
 ```bash
 docker compose up -d
-docker compose exec ollama ollama pull qwen:30b   # ensure the model exists (first time only)
 docker compose exec workshop bash
 ```
 
@@ -34,17 +33,17 @@ export AGENTS_LOG_LEVEL=DEBUG
 
 Key imports:
 
-- `from agents import function_tool, ToolOutputText`
-- `@function_tool()` decorator automatically derives JSON schemas from type hints and docstrings.
-- Return values can be plain Python primitives or `ToolOutputText`/`ToolOutputFileContent` for richer payloads.
+- `from agents import function_tool`
+- `@function_tool` decorator automatically derives JSON schemas from type hints and docstrings.
+- Return values can be plain Python primitives or Pydantic models.
 
 ### Example Walkthrough
 
 Open `stages/stage2/demo.py`. It defines:
 
-1. `@function_tool()` decorated `find_repo_todos` helper that scans for TODO/FIXME comments while ensuring paths stay in `/workspace`.
-2. An MCP server (`curriculum_server.py`) that surfaces structured curriculum knowledge.
-3. An agent that combines both capabilities to answer a higher-level question.
+1. A custom tool helper.
+2. An MCP server connection (using a local example or external package).
+3. An agent that combines capabilities.
 
 Run it as a module from the repo root:
 
@@ -52,63 +51,56 @@ Run it as a module from the repo root:
 python -m stages.stage2.demo
 ```
 
-Pass `--verbose` to watch the agent trace (LLM calls, tool invocations, MCP requests) in real time.
+## 3. Using an MCP Server
 
-You should see streaming traces similar to:
+In this stage, we use the `mcp_weather_server` package to provide real-time weather data. This demonstrates how to leverage the growing ecosystem of MCP servers.
 
+To connect to an MCP server via stdio, we use `MCPServerStdio` and point it to the executable command.
+
+```python
+from agents.mcp import MCPServerStdio, MCPServerStdioParams
+import sys
+
+params = MCPServerStdioParams(
+    command=sys.executable,
+    args=["-m", "mcp_weather_server"],
+)
 ```
-> Running Curriculum Mentor...
-• Tool call: repo.find_todos
-• MCP call: curriculum.fetch_stage_summary
-• Final answer combining both tool results
-```
-
-Review the code to notice:
-
-- The docstring of `find_repo_todos` doubles as the tool description.
-- Paths are validated before accessing the filesystem.
-- `MCPServerStdio` automatically spawns the server script with the active Python interpreter.
-- `agent.mcp_servers=[curriculum_server]` exposes all MCP tools under the `curriculum.` namespace.
-
-## 3. Building the MCP Server
-
-File: `stages/stage2/mcp_servers/curriculum_server.py`
-
-- Uses `FastMCP("Curriculum Server", instructions=...)`.
-- Exposes a `curriculum.fetch_stage_summary` tool plus a contextual resource.
-- The `if __name__ == "__main__": mcp.run()` block enables stdio transport by default.
-- When `demo.py` runs, the SDK forks this script and handles the lifecycle automatically.
-
-Feel free to extend the server with more resources (e.g. `@mcp.resource("curriculum://stage/{name}")`) to share richer context.
 
 ## 4. Activity
 
 File: `stages/stage2/activity/starter_agent.py`
 
-> Build a “curriculum coach” agent that:
+> Build a "Weather Assistant" agent that:
 >
-> 1. Uses a custom tool to assemble a mini-lesson outline (topic, learning goals, hands-on task).
-> 2. Pulls supporting facts from the MCP curriculum server.
-> 3. Returns a JSON-formatted plan (hint: set `output_type` to a `pydantic` model).
+> 1. Fetches weather data using the `mcp_weather_server`.
+> 2. Uses a custom tool `recommend_outfit` to generate clothing suggestions based on the temperature and condition.
+> 3. Returns a structured JSON report.
 >
-> The starter script already defines the `LessonPlan` schema and a `draft_outline` function decorated with `@function_tool()`. Your tasks are to:
+> The starter script has been set up with the necessary imports and a skeleton. Your tasks are to:
 >
-> - Complete the implementation of `draft_outline`.
-> - Craft system instructions that tell the agent how to juggle both the tool and the MCP data.
-> - Pick an appropriate prompt that causes a single run to produce a coherent lesson plan.
+> - Review the `recommend_outfit` tool logic.
+> - Ensure the agent instructions coordinate the tool calls (Weather MCP -> Custom Tool -> Final Answer).
+> - Run the agent and verify the output.
 
-Run the activity the same way:
+Run the activity:
 
 ```bash
 python -m stages.stage2.activity.starter_agent
 ```
 
-The optional `--verbose` flag is helpful while debugging your custom tool/MCP orchestration.
+Use `--verbose` to see the agent discovering and calling the tools:
+
+```bash
+python -m stages.stage2.activity.starter_agent --verbose
+```
+
+You should see the agent call the weather tool, then your outfit tool, and finally produce the JSON.
 
 **Stretch ideas**
 
-- Add a tool guardrail that blocks lesson requests longer than N minutes.
-- Modify the MCP server to return example code snippets per stage.
-- Experiment with `ToolOutputText` vs returning plain Python objects.
+- Add a `CityGuide` tool that suggests places to visit based on the weather.
+- Swap the model to a different one (if available) and see how it handles tool calling.
+- Add error handling if the city is not found.
 
 Once you can orchestrate custom tools and MCP data, move on to Stage 3 to coordinate entire multi-agent workflows.
