@@ -9,7 +9,6 @@ import asyncio
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
 
 from agents import (
     Agent,
@@ -36,7 +35,6 @@ class WorkflowState:
 
     research_notes: list[str] = field(default_factory=list)
     action_items: list[str] = field(default_factory=list)
-    risks: list[str] = field(default_factory=list)
 
 
 def _resolve_relative_path(relative_path: str) -> Path:
@@ -91,24 +89,10 @@ def capture_todos(
 def save_plan(
     ctx: RunContextWrapper[WorkflowState],
     steps: list[str],
-    risks: list[str] | None = None,
 ) -> str:
-    """Persist the planner's steps (and optional risks) in the shared context."""
+    """Persist the planner's steps in the shared context."""
     ctx.context.action_items = steps
-    if risks:
-        ctx.context.risks.extend(risks)
-    return f"Stored {len(steps)} workflow steps and {len(risks or [])} risks."
-
-
-@function_tool(name_override="workflow.log_risk")
-def log_risk(
-    ctx: RunContextWrapper[WorkflowState],
-    description: str,
-    severity: Literal["low", "medium", "high"] = "medium",
-) -> str:
-    """Append a risk/guardrail recommendation."""
-    ctx.context.risks.append(f"[{severity.upper()}] {description}")
-    return f"Recorded {severity} risk."
+    return f"Stored {len(steps)} workflow steps."
 
 
 CURRICULUM_SERVER_PARAMS = MCPServerStdioParams(
@@ -151,28 +135,15 @@ async def main(verbose: bool = False) -> None:
             model_settings=ModelSettings(temperature=0.3),
         )
 
-        reviewer_agent = Agent(
-            name="Reviewer Agent",
-            handoff_description="Stress-tests the workflow, adding guardrails.",
-            instructions=(
-                "Inspect the proposed workflow steps and add at least one risk or validation check per step. "
-                "Report them via workflow.log_risk and provide a concise reviewer summary."
-            ),
-            tools=[log_risk],
-            model=model,
-            model_settings=ModelSettings(temperature=0.1),
-        )
-
         coordinator = Agent(
             name="Workflow Coordinator",
             instructions=(
                 "Coordinate the multi-agent workflow in order:\n"
                 "1. Call the Research Agent to gather context.\n"
                 "2. Pass its insights to the Planner Agent to create steps.\n"
-                "3. Delegate to the Reviewer Agent for guardrails.\n"
-                "Finally, synthesize a JSON object with keys research, plan, and risks summarising the shared context."
+                "Finally, synthesize a JSON object with keys research and plan summarising the shared context."
             ),
-            handoffs=[research_agent, planner_agent, reviewer_agent],
+            handoffs=[research_agent, planner_agent],
             model=model,
             model_settings=ModelSettings(temperature=0.05),
         )
@@ -197,10 +168,6 @@ async def main(verbose: bool = False) -> None:
         print("- Action items:")
         for step in state.action_items:
             print(f"  • {step}")
-
-        print("- Risks:")
-        for risk in state.risks:
-            print(f"  • {risk}")
 
 
 if __name__ == "__main__":

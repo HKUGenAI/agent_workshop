@@ -1,16 +1,16 @@
 """
-Stage 3 activity starter.
+Stage 3 Activity: Red Team vs. Blue Team Security Audit.
 
-Objective: orchestrate a deployment workflow with multiple specialised agents.
+Objective: Orchestrate an adversarial workflow where a Defender (Blue) and Attacker (Red)
+iterate on a configuration until it meets the CISO's standards.
+
 Run with: python -m stages.stage3.activity.starter_workflow
 """
 
 from __future__ import annotations
 
 import asyncio
-import sys
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Literal
 
 from agents import (
@@ -21,119 +21,142 @@ from agents import (
     ToolOutputText,
     function_tool,
 )
-from agents.mcp import MCPServerStdio, MCPServerStdioParams
 from pydantic import BaseModel
 
 from utils.cli import build_verbose_hooks, parse_common_args
 from utils.ollama_adaptor import model
 
 
-WORKSPACE_ROOT = Path("/workspace").resolve()
-REPO_ROOT = Path(__file__).resolve().parents[3]
-
+# --- Shared State ---
 
 @dataclass
-class DeploymentState:
-    preflight_logs: list[str] = field(default_factory=list)
-    deployment_steps: list[str] = field(default_factory=list)
-    validation_plan: list[str] = field(default_factory=list)
+class AuditState:
+    """Shared context representing the 'battleground'."""
+    proposed_config: str = ""
+    vulnerabilities: list[str] = field(default_factory=list)
+    iteration: int = 0
 
 
-class DeploymentWorkflow(BaseModel):
-    preflight_checks: list[str]
-    deployment_steps: list[str]
-    validation_plan: list[str]
+# --- Final Output Schema ---
+
+class SecurityReport(BaseModel):
+    final_config: str
+    resolved_issues: list[str]
+    approval_status: Literal["APPROVED", "REJECTED"]
+    total_iterations: int
 
 
-@function_tool(name_override="workflow.store_steps")
-def store_steps(
-    ctx: RunContextWrapper[DeploymentState],
-    steps: list[str],
-    category: Literal["deployment", "validation"] = "deployment",
+# --- Tools ---
+
+@function_tool(name_override="audit.submit_config")
+def submit_config(
+    ctx: RunContextWrapper[AuditState],
+    config_content: str,
+    comment: str = "",
 ) -> ToolOutputText:
     """
-    Persist steps in the shared context.
-
-    TODO: Update this helper to capture more metadata or craft richer feedback for the agents.
+    (Blue Team) Propose or update the system configuration.
     """
-    if category == "deployment":
-        ctx.context.deployment_steps = steps
-    else:
-        ctx.context.validation_plan = steps
-    return ToolOutputText(text=f"Stored {len(steps)} steps under {category}.")
+    ctx.context.proposed_config = config_content
+    ctx.context.iteration += 1
+    # Clear old vulnerabilities since we are submitting a fix
+    old_vulns = len(ctx.context.vulnerabilities)
+    ctx.context.vulnerabilities.clear()
+    
+    return ToolOutputText(
+        text=f"Config updated (Iteration {ctx.context.iteration}). Previous vulnerabilities cleared: {old_vulns}. Comment: {comment}"
+    )
 
 
-CURRICULUM_SERVER_PARAMS = MCPServerStdioParams(
-    command=sys.executable,
-    args=[str(REPO_ROOT / "stages/stage2/mcp_servers/curriculum_server.py")],
-    cwd=str(REPO_ROOT),
-)
+@function_tool(name_override="audit.report_vulnerability")
+def report_vulnerability(
+    ctx: RunContextWrapper[AuditState],
+    severity: Literal["low", "medium", "high", "critical"],
+    description: str,
+) -> str:
+    """
+    (Red Team) Log a security flaw found in the current config.
+    """
+    entry = f"[{severity.upper()}] {description}"
+    ctx.context.vulnerabilities.append(entry)
+    return f"Vulnerability logged: {entry}"
 
+
+# --- Main Workflow ---
 
 async def main(verbose: bool = False) -> None:
     hooks = build_verbose_hooks(verbose)
-    state = DeploymentState()
-    async with MCPServerStdio(
-        params=CURRICULUM_SERVER_PARAMS,
-        cache_tools_list=True,
-        name="Curriculum Server",
-    ) as curriculum_server:
-        # TODO: Refine instructions, tools, and output handling for each specialised agent.
-        preflight_agent = Agent(
-            name="Preflight Agent",
-            handoff_description="Validates configuration before deployment.",
-            instructions="Rewrite me with detailed preflight guidance.",
-            tools=[],
-            mcp_servers=[curriculum_server],
-            model=model,
-            model_settings=ModelSettings(temperature=0.2),
-        )
+    state = AuditState()
 
-        execution_agent = Agent(
-            name="Execution Agent",
-            handoff_description="Drafts deployment steps.",
-            instructions="Rewrite me to produce a deployment checklist and call workflow.store_steps.",
-            tools=[store_steps],
-            model=model,
-            model_settings=ModelSettings(temperature=0.25),
-        )
+    # 1. Blue Team: The Defender
+    # Responsibility: Create the initial config and fix reported issues.
+    blue_agent = Agent(
+        name="Blue Team",
+        handoff_description="Updates the configuration to fix vulnerabilities.",
+        instructions=(
+            "You are the System Administrator. Your goal is to secure a web server configuration.\n"
+            "1. If the config is empty, propose a basic JSON config (port, debug_mode, admin_user).\n"
+            "2. If vulnerabilities are reported, edit the config to fix them (e.g., disable debug, change default ports).\n"
+            "3. Always use 'audit.submit_config' to save your changes."
+        ),
+        tools=[submit_config],
+        model=model,
+        model_settings=ModelSettings(temperature=0.2),
+    )
 
-        validation_agent = Agent(
-            name="Validation Agent",
-            handoff_description="Defines validation criteria and rollback triggers.",
-            instructions="Rewrite me to define validation/rollback and call workflow.store_steps(category='validation').",
-            tools=[store_steps],
-            model=model,
-            model_settings=ModelSettings(temperature=0.15),
-        )
+    # 2. Red Team: The Attacker
+    # Responsibility: Find flaws.
+    red_agent = Agent(
+        name="Red Team",
+        handoff_description="Audits the configuration for security flaws.",
+        instructions=(
+            "You are an Ethical Hacker. Inspect the 'proposed_config' in the context.\n"
+            "Look for common mistakes:\n"
+            "- Debug mode enabled\n"
+            "- Default admin credentials\n"
+            "- Insecure ports (e.g., 80 instead of 443)\n"
+            "- Missing encryption settings\n"
+            "Use 'audit.report_vulnerability' to log EVERY issue you find. If it looks perfect, say 'No issues found'."
+        ),
+        tools=[report_vulnerability],
+        model=model,
+        model_settings=ModelSettings(temperature=0.4),
+    )
 
-        coordinator = Agent(
-            name="Deployment Coordinator",
-            instructions=(
-                "TODO: Describe how to call the preflight, execution, and validation agents. "
-                "Conclude with a JSON DeploymentWorkflow object."
-            ),
-            handoffs=[preflight_agent, execution_agent, validation_agent],
-            model=model,
-            model_settings=ModelSettings(temperature=0.05),
-            output_type=DeploymentWorkflow,
-        )
+    # 3. CISO: The Coordinator/Judge
+    # Responsibility: Decide loop or finish.
+    ciso_agent = Agent(
+        name="CISO",
+        instructions=(
+            "You manage the security audit lifecycle.\n"
+            "Step 1: Call Blue Team to draft/fix the config.\n"
+            "Step 2: Call Red Team to audit the new config.\n"
+            "Step 3: Review the state.\n"
+            "   - If vulnerabilities exist: Loop back to Step 1 (Blue Team).\n"
+            "   - If NO vulnerabilities AND config is not empty: Output the final SecurityReport JSON with status APPROVED.\n"
+            "   - Limit to 3 iterations max. If still failing, output REJECTED."
+        ),
+        handoffs=[blue_agent, red_agent],
+        model=model,
+        model_settings=ModelSettings(temperature=0.1),
+        output_type=SecurityReport,
+    )
 
-        request = (
-            "Prepare a deployment workflow for the agent workshop sample project. "
-            "Highlight risks tied to the custom MCP server."
-        )
+    print("> Starting Red Team vs. Blue Team Audit...")
+    
+    # We provide an empty starting prompt because the CISO instructions drive the flow.
+    result = await Runner.run(
+        ciso_agent, 
+        "Secure the web server configuration.", 
+        context=state, 
+        hooks=hooks
+    )
 
-        result = await Runner.run(coordinator, request, context=state, hooks=hooks)
-        workflow = result.final_output_as(DeploymentWorkflow)
+    report = result.final_output_as(SecurityReport)
 
-        print("\n=== Deployment Workflow ===")
-        print(workflow.model_dump_json(indent=2))
-
-        print("\n=== Shared State Snapshot ===")
-        print(f"Preflight logs: {state.preflight_logs}")
-        print(f"Deployment steps: {state.deployment_steps}")
-        print(f"Validation plan: {state.validation_plan}")
+    print("\n=== Final Security Report ===")
+    print(report.model_dump_json(indent=2))
+    print(f"\nFinal Config:\n{report.final_config}")
 
 
 if __name__ == "__main__":
