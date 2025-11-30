@@ -18,17 +18,6 @@ docker compose up -d
 docker compose exec workshop bash
 ```
 
-### Helpful environment flags
-
-- `OPENAI_BASE_URL=http://ollama:11434/v1`
-- `OPENAI_API_KEY=ollama`
-
-You can enable verbose tool tracing while experimenting:
-
-```bash
-export AGENTS_LOG_LEVEL=DEBUG
-```
-
 ## 2. Custom Function Tools
 
 Key imports:

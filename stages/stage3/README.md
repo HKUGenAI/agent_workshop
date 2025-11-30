@@ -9,7 +9,7 @@ Now that you can extend a single agent, orchestrate an end-to-end workflow with 
 - Implement **adversarial** or **iterative** loops (e.g. "Reviewer rejects -> Coder fixes").
 - interact with real files on disk as a shared medium.
 
-## 1. Concepts Refresher
+## 1. Concepts
 
 - **Handoffs** — An agent can delegate to another agent (or a `handoff(...)` wrapper) when it needs help. Provide a `handoff_description` so the coordinator knows when to call it.
 - **Coordinator Agent** — The top-level agent that routes work across specialists.
@@ -30,18 +30,16 @@ python -m stages.stage3.demo --verbose
 
 File: `stages/stage3/activity/starter_workflow.py`
 
-We have implemented a realistic "Code Audit" simulation.
-When you run the script, it generates a vulnerable `server.py` file on disk containing common security flaws (Command Injection, Hardcoded passwords, etc.).
-
 **The Players:**
 1.  **Red Team (Attacker):** Reads `server.py`, identifies vulnerabilities, and reports them to the shared state.
 2.  **Blue Team (Defender):** Reads `server.py` and the reported issues, then **rewrites the file** to fix them.
 3.  **CISO (Judge):** Orchestrates the loop. They keep sending the Red Team back to check the Blue Team's work until the code is clean (or time runs out).
 
 **Your Goal:**
-1.  **Run the simulation:** `python -m stages.stage3.activity.starter_workflow`
-2.  **Watch the battle:** Observe how the file `stages/stage3/activity/server.py` changes on disk.
-3.  **Inspect the result:** Did the Blue Team fix everything? Did they break the code syntax?
+1. **Implement the Red  and Blue Team workflow:** See  `stages/stage3/activity/starter_workflow.py` for the skeleton code.
+2.  **Run the simulation:** `python -m stages.stage3.activity.starter_workflow`
+3.  **Watch the battle:** Observe how the file `stages/stage3/activity/server.py` changes on disk.
+4.  **Inspect the result:** Did the Blue Team fix everything? Did they break the code syntax?
 
 **Stretch ideas**
 - Add a `TestAgent` that tries to actually run the code (`python server.py`) and curls it to ensure the Blue Team didn't break functionality while fixing security.

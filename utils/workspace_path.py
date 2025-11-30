@@ -1,6 +1,6 @@
 from pathlib import Path
 
-WORKSPACE_ROOT = Path("/workspace").resolve()
+WORKSPACE_ROOT = Path(__file__).resolve().parent.parent
 
 def resolve_workspace_path(path: str, *, ensure_parent: bool = True) -> Path:
     candidate = Path(path)
