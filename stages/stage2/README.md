@@ -60,17 +60,17 @@ params = MCPServerStdioParams(
 
 File: `stages/stage2/activity/starter_agent.py`
 
-> Build a "Weather Assistant" agent that:
->
-> 1. Fetches weather data using the `mcp_weather_server`.
-> 2. Uses a custom tool `recommend_outfit` to generate clothing suggestions based on the temperature and condition.
-> 3. Returns a structured JSON report.
->
-> The starter script has been set up with the necessary imports and a skeleton. Your tasks are to:
->
-> - Review the `recommend_outfit` tool logic.
-> - Ensure the agent instructions coordinate the tool calls (Weather MCP -> Custom Tool -> Final Answer).
-> - Run the agent and verify the output.
+Build a "Weather Assistant" agent that:
+
+1. Fetches weather data using the `mcp_weather_server`.
+2. Uses a custom tool `recommend_outfit` to generate clothing suggestions based on the temperature and condition.
+3. Returns a structured JSON report.
+
+The starter script has been set up with the necessary imports and a skeleton. Your tasks are to:
+
+- Review the `recommend_outfit` tool logic.
+- Ensure the agent instructions coordinate the tool calls (Weather MCP -> Custom Tool -> Final Answer).
+- Run the agent and verify the output.
 
 Run the activity:
 
