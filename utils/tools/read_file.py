@@ -48,12 +48,15 @@ def read_text_file(
                 text=f"File only has {total_lines} lines; requested {end}."
             )
 
-    # TODO: Numbering each emitted line and clamping the overall response to
-    # ``max_output_chars`` characters, adding ``...`` when truncated.
+    width = len(str(end))
+    numbered = [f"{idx:>{width}} {lines[idx - 1]}" for idx in range(start, end + 1)]
+    output = "\n".join(numbered)
 
-    return ToolOutputText(
-        text=(
-            "read.file is not implemented yet. Open utils/tools/read_file.py "
-            "and follow the docstring instructions."
-        )
-    )
+    if len(output) > max_output_chars:
+        suffix = "..."
+        if max_output_chars <= len(suffix):
+            output = suffix[:max_output_chars]
+        else:
+            output = output[: max_output_chars - len(suffix)] + suffix
+
+    return ToolOutputText(text=output)
